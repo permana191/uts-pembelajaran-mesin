@@ -210,7 +210,3 @@ python app.py
 ```
 Buka browser pada alamat **`http://127.0.0.1:5000`**.
 
-### Deployment ke Vercel (1-Klik via GitHub)
-1. Unggah seluruh isi folder `UTS_ML_Prediksi_Emisi_CO2_301240037` ke repositori GitHub (`https://github.com/permana191/...`).
-2. Masuk ke dashboard [Vercel](https://vercel.com), klik **Add New Project**, lalu pilih repositori tersebut.
-3. Karena file `app.py`, `requirements.txt`, dan `vercel.json` sudah berada di direktori *root*, langsung klik **Deploy** tanpa perlu mengubah pengaturan *Build Command*.
