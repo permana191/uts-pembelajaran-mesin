@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CARBONTEL AI // Prediksi Emisi CO2 Kendaraan Bermotor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Orbitron:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- ===================================================================
+         MAIN TELEMETRY WORKSPACE (LEFT / CENTER)
+         =================================================================== -->
+    <main class="main-workspace">
+      <header class="top-hud">
+        <div class="hud-title-group">
+          <h1>CARBONTEL <span style="color:var(--neon-cyan)">//</span> VEHICULAR CO<sub>2</sub> TELEMETRY</h1>
+          <p>Sistem Prediksi Emisi Karbon Dioksida Kendaraan Bermotor — Random Forest &amp; Multiple Linear Regression</p>
+        </div>
+        <div class="hud-status-pills">
+          <span class="cyber-pill emerald"><i class="fas fa-microchip"></i> RF R²: {{ metadata.metrics.clean_rf.r2 }}</span>
+          <span class="cyber-pill"><i class="fas fa-chart-line"></i> MLR R²: {{ metadata.metrics.clean_mlr.r2 }}</span>
+          <button class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i> MENU</button>
+        </div>
+      </header>
+
+      <!-- =================================================================
+           MENU 1: DASHBOARD & RINGKASAN TELEMETRI
+           ================================================================= -->
+      <section class="tab-section active" id="tab-dashboard">
+        <div class="kpi-grid">
+          <div class="cyber-card emerald">
+            <div class="kpi-label">Akurasi Random Forest (R²)</div>
+            <div class="kpi-value emerald">{{ "%.4f"|format(metadata.metrics.clean_rf.r2) }}</div>
+            <div class="kpi-sub">RMSE: {{ metadata.metrics.clean_rf.rmse }} g/km | MAE: {{ metadata.metrics.clean_rf.mae }} g/km</div>
+          </div>
+          <div class="cyber-card">
+            <div class="kpi-label">Akurasi Linear Regression (R²)</div>
+            <div class="kpi-value cyan">{{ "%.4f"|format(metadata.metrics.clean_mlr.r2) }}</div>
+            <div class="kpi-sub">RMSE: {{ metadata.metrics.clean_mlr.rmse }} g/km | MAE: {{ metadata.metrics.clean_mlr.mae }} g/km</div>
+          </div>
+          <div class="cyber-card amber">
+            <div class="kpi-label">Dataset Bersih (Deduplikasi)</div>
+            <div class="kpi-value amber">{{ "{:,}".format(metadata.dataset_info.clean_rows).replace(",", ".") }}</div>
+            <div class="kpi-sub">Dari {{ "{:,}".format(metadata.dataset_info.raw_rows).replace(",", ".") }} baris (-{{ metadata.dataset_info.duplicates_removed }} duplikat)</div>
+          </div>
+          <div class="cyber-card">
+            <div class="kpi-label">Rata-Rata Emisi Populasi</div>
+            <div class="kpi-value">{{ metadata.dataset_info.co2_mean }} <small style="font-size:0.85rem">g/km</small></div>
+            <div class="kpi-sub">Rentang: {{ metadata.dataset_info.co2_min }} – {{ metadata.dataset_info.co2_max }} g/km</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="cyber-card">
+            <div class="section-header">
+              <h2 class="section-title"><i class="fas fa-car-side"></i> Top 10 Emisi Rata-Rata per Kelas Kendaraan</h2>
+            </div>
+            <div class="chart-canvas-box">
+              <canvas id="vcOverviewChart"></canvas>
+            </div>
+          </div>
+
+          <div class="cyber-card emerald">
+            <div class="section-header">
+              <h2 class="section-title" style="color:var(--neon-emerald)"><i class="fas fa-gas-pump"></i> Korelasi Bahan Bakar vs Emisi CO<sub>2</sub></h2>
+            </div>
+            <div class="chart-canvas-box">
+              <canvas id="fuelOverviewChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="cyber-card">
+          <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-layer-group"></i> Matriks Perbandingan Evaluasi Eksperimental (Data Uji 20%)</h2>
+          </div>
+          <div class="table-wrap">
+            <table class="cyber-table">
+              <thead>
+                <tr>
+                  <th>Skenario Dataset</th>
+                  <th>Algoritma Machine Learning</th>
+                  <th>R² Score</th>
+                  <th>MAE (g/km)</th>
+                  <th>MSE</th>
+                  <th>RMSE (g/km)</th>
+                  <th>5-Fold CV R²</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Dataset Deduplikasi (N = {{ metadata.dataset_info.clean_rows }})</td>
+                  <td><strong>Random Forest Regressor (Unggulan)</strong></td>
+                  <td style="color:var(--neon-emerald);font-weight:700">{{ metadata.metrics.clean_rf.r2 }}</td>
+                  <td>{{ metadata.metrics.clean_rf.mae }}</td>
+                  <td>{{ metadata.metrics.clean_rf.mse }}</td>
+                  <td style="color:var(--neon-emerald);font-weight:700">{{ metadata.metrics.clean_rf.rmse }}</td>
+                  <td>{{ metadata.metrics.cv_rf_mean }}</td>
+                </tr>
+                <tr>
+                  <td>Dataset Deduplikasi (N = {{ metadata.dataset_info.clean_rows }})</td>
+                  <td>Multiple Linear Regression (Baseline)</td>
+                  <td style="color:var(--neon-cyan);font-weight:700">{{ metadata.metrics.clean_mlr.r2 }}</td>
+                  <td>{{ metadata.metrics.clean_mlr.mae }}</td>
+                  <td>{{ metadata.metrics.clean_mlr.mse }}</td>
+                  <td>{{ metadata.metrics.clean_mlr.rmse }}</td>
+                  <td>{{ metadata.metrics.cv_mlr_mean }}</td>
+                </tr>
+                <tr>
+                  <td>Dataset Mentah (N = {{ metadata.dataset_info.raw_rows }})</td>
+                  <td>Random Forest Regressor</td>
+                  <td>{{ metadata.metrics.raw_rf.r2 }}</td>
+                  <td>{{ metadata.metrics.raw_rf.mae }}</td>
+                  <td>{{ metadata.metrics.raw_rf.mse }}</td>
+                  <td>{{ metadata.metrics.raw_rf.rmse }}</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td>Dataset Mentah (N = {{ metadata.dataset_info.raw_rows }})</td>
+                  <td>Multiple Linear Regression</td>
+                  <td>{{ metadata.metrics.raw_mlr.r2 }}</td>
+                  <td>{{ metadata.metrics.raw_mlr.mae }}</td>
+                  <td>{{ metadata.metrics.raw_mlr.mse }}</td>
+                  <td>{{ metadata.metrics.raw_mlr.rmse }}</td>
+                  <td>—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           MENU 2: SIMULATOR PREDIKSI CO2 REAL-TIME
+           ================================================================= -->
+      <section class="tab-section" id="tab-simulator">
+        <div class="grid-sim">
+          <div class="cyber-card">
+            <div class="section-header">
+              <h2 class="section-title"><i class="fas fa-sliders-h"></i> Parameter Spesifikasi Mesin &amp; Konsumsi BBM</h2>
+            </div>
+
+            <div class="kpi-label" style="margin-bottom:0.45rem">Preset Kendaraan Dunia Nyata (Klik untuk Uji Cepat):</div>
+            <div class="preset-bar">
+              <button type="button" class="preset-btn active" data-preset="hybrid">Hyundai Ioniq Hybrid</button>
+              <button type="button" class="preset-btn" data-preset="compact">Toyota Corolla 2.0</button>
+              <button type="button" class="preset-btn" data-preset="sedan_turbo">BMW 330i Turbo</button>
+              <button type="button" class="preset-btn" data-preset="suv_diesel">SUV 3.0L Diesel</button>
+              <button type="button" class="preset-btn" data-preset="pickup_e85">Ford F-150 E85</button>
+              <button type="button" class="preset-btn" data-preset="hypercar">Bugatti Chiron W16</button>
+            </div>
+
+            <form id="simulatorForm">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="simClass">Kelas Kendaraan (Vehicle Class)</label>
+                  <select id="simClass" class="cyber-select">
+                    {% for vc in metadata.categories.vehicle_classes %}
+                    <option value="{{ vc }}" {% if vc == 'COMPACT' %}selected{% endif %}>{{ vc }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="simFuel">Jenis Bahan Bakar (Fuel Type)</label>
+                  <select id="simFuel" class="cyber-select">
+                    {% for ft in metadata.categories.fuel_types %}
+                    <option value="{{ ft.code }}">{{ ft.label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="simTransmission">Sistem Transmisi</label>
+                  <select id="simTransmission" class="cyber-select">
+                    {% for tr in metadata.categories.transmissions %}
+                    <option value="{{ tr }}" {% if tr == 'AS6' %}selected{% endif %}>{{ tr }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="simCylinders">Jumlah Silinder Mesin</label>
+                  <select id="simCylinders" class="cyber-select">
+                    {% for cyl in [3, 4, 5, 6, 8, 10, 12, 16] %}
+                    <option value="{{ cyl }}" {% if cyl == 4 %}selected{% endif %}>{{ cyl }} Silinder</option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                <div class="form-group full">
+                  <label for="simEngine">Kapasitas Mesin (Engine Size) <span class="val-badge" id="lblEngine">2.0 L</span></label>
+                  <input type="range" id="simEngine" min="0.9" max="8.4" step="0.1" value="2.0" />
+                </div>
+
+                <div class="form-group">
+                  <label for="simCity">Konsumsi BBM Dalam Kota <span class="val-badge" id="lblCity">8.5 L/100km</span></label>
+                  <input type="range" id="simCity" min="4.0" max="30.6" step="0.1" value="8.5" />
+                </div>
+
+                <div class="form-group">
+                  <label for="simHwy">Konsumsi BBM Jalan Tol <span class="val-badge" id="lblHwy">6.4 L/100km</span></label>
+                  <input type="range" id="simHwy" min="4.0" max="20.6" step="0.1" value="6.4" />
+                </div>
+
+                <div class="form-group">
+                  <label>Konsumsi Kombinasi (55% City / 45% Hwy)</label>
+                  <div class="cyber-input" style="background:rgba(0,243,255,0.06);border-color:var(--border-bright);font-family:var(--font-mono)" id="lblCombAuto">7.56 L/100km</div>
+                </div>
+
+                <div class="form-group">
+                  <label for="simAnnualKm">Estimasi Jarak Tempuh Tahunan <span class="val-badge" id="lblAnnualKm">15.000 km/tahun</span></label>
+                  <input type="range" id="simAnnualKm" min="5000" max="50000" step="1000" value="15000" />
+                </div>
+              </div>
+
+              <button type="submit" class="btn-cyber-primary"><i class="fas fa-bolt"></i> EKSEKUSI PREDIKSI TELEMETRI CO2</button>
+            </form>
+          </div>
+
+          <!-- Output Readout Panel -->
+          <div class="cyber-card emerald">
+            <div class="section-header">
+              <h2 class="section-title" style="color:var(--neon-emerald)"><i class="fas fa-radiation"></i> Hasil Inferensi Model AI</h2>
+            </div>
+
+            <div class="readout-box">
+              <div class="kpi-label">Prediksi Utama (Random Forest Regressor)</div>
+              <div class="readout-main-num" id="outRfCo2">176.5</div>
+              <div class="readout-unit">gram CO<sub>2</sub> per kilometer (g/km)</div>
+              <div class="eco-badge" id="outEcoBadge">TIER B // ECO-BALANCED</div>
+            </div>
+
+            <div class="metric-mini-grid">
+              <div class="metric-mini">
+                <span>Prediksi Linear Regression</span>
+                <strong id="outMlrCo2" style="color:var(--neon-cyan)">178.4 g/km</strong>
+              </div>
+              <div class="metric-mini">
+                <span>Selisih Antar Model</span>
+                <strong id="outModelDelta">±1.90 g/km</strong>
+              </div>
+              <div class="metric-mini">
+                <span>Jejak Karbon Tahunan</span>
+                <strong id="outAnnualCo2" style="color:var(--neon-amber)">2.647,5 kg/thn</strong>
+              </div>
+              <div class="metric-mini">
+                <span>Kompensasi Pohon Dewasa</span>
+                <strong id="outTrees" style="color:var(--neon-emerald)">121.6 pohon</strong>
+              </div>
+            </div>
+
+            <div class="cyber-card" style="background:var(--bg-input);padding:0.85rem;margin-bottom:0.85rem">
+              <div class="kpi-label">Posisi Relatif vs Rata-Rata Dataset: <strong id="outVsAvg" style="color:var(--neon-cyan)">-29.7%</strong></div>
+              <p id="outAdvice" style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.35rem">
+                Keseimbangan baik antara performa mesin dan jejak karbon harian.
+              </p>
+            </div>
+
+            <div style="display:flex;gap:0.5rem">
+              <input type="text" id="cmpCustomName" class="cyber-input" placeholder="Nama label untuk Arena Komparasi..." />
+              <button type="button" id="addCurrentToCompare" class="btn-sm" style="white-space:nowrap"><i class="fas fa-plus"></i> Bandingkan</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           MENU 3: ARENA KOMPARASI MULTI-KENDARAAN
+           ================================================================= -->
+      <section class="tab-section" id="tab-comparator">
+        <div class="cyber-card" style="margin-bottom:1.25rem">
+          <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-balance-scale"></i> Komparasi Emisi Multi-Kendaraan (Head-to-Head Arena)</h2>
+            <span class="cyber-pill">Maksimal 5 Kendaraan</span>
+          </div>
+          <p style="font-size:0.83rem;color:var(--text-secondary);margin-bottom:1rem">
+            Bandingkan performa emisi gas buang dari berbagai konfigurasi mesin secara berdampingan. Kamu juga dapat menambahkan konfigurasi kustom langsung dari menu <strong>CO2 Simulator</strong>.
+          </p>
+          <div class="chart-canvas-box" style="height:310px">
+            <canvas id="comparatorChart"></canvas>
+          </div>
+        </div>
+
+        <div class="cyber-card">
+          <div class="table-wrap">
+            <table class="cyber-table">
+              <thead>
+                <tr>
+                  <th>Kendaraan &amp; Kelas</th>
+                  <th>Spesifikasi Mesin</th>
+                  <th>BBM Kombinasi</th>
+                  <th>Prediksi RF</th>
+                  <th>Prediksi MLR</th>
+                  <th>Emisi Tahunan (15rb km)</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="compareTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           MENU 4: EKSPLORASI DATASET INTERAKTIF
+           ================================================================= -->
+      <section class="tab-section" id="tab-dataset">
+        <div class="cyber-card" style="margin-bottom:1.25rem">
+          <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-database"></i> Eksplorasi Sampel Dataset (CO2 Emissions Canada)</h2>
+          </div>
+
+          <div class="table-toolbar">
+            <div class="filter-pills">
+              <button type="button" class="preset-btn fuel-filter-btn active" data-fuel="ALL">Semua BBM</button>
+              <button type="button" class="preset-btn fuel-filter-btn" data-fuel="X">X (Regular)</button>
+              <button type="button" class="preset-btn fuel-filter-btn" data-fuel="Z">Z (Premium)</button>
+              <button type="button" class="preset-btn fuel-filter-btn" data-fuel="D">D (Diesel)</button>
+              <button type="button" class="preset-btn fuel-filter-btn" data-fuel="E">E (Ethanol E85)</button>
+            </div>
+
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+              <select id="datasetClassFilter" class="cyber-select" style="width:200px">
+                <option value="ALL">Semua Kelas Kendaraan</option>
+                {% for vc in metadata.categories.vehicle_classes %}
+                <option value="{{ vc }}">{{ vc }}</option>
+                {% endfor %}
+              </select>
+              <input type="text" id="datasetSearch" class="cyber-input" style="width:210px" placeholder="Cari merek / model..." />
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="cyber-table">
+              <thead>
+                <tr>
+                  <th>Make</th>
+                  <th>Model</th>
+                  <th>Vehicle Class</th>
+                  <th>Engine</th>
+                  <th>Cyl</th>
+                  <th>Trans</th>
+                  <th>Fuel</th>
+                  <th>Comb (L/100km)</th>
+                  <th>CO2 (g/km)</th>
+                </tr>
+              </thead>
+              <tbody id="datasetTableBody"></tbody>
+            </table>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.9rem;flex-wrap:wrap;gap:0.5rem">
+            <span id="datasetPageInfo" style="font-size:0.8rem;color:var(--text-secondary)"></span>
+            <div style="display:flex;gap:0.45rem">
+              <button type="button" id="prevPageBtn" class="btn-sm"><i class="fas fa-chevron-left"></i> Prev</button>
+              <button type="button" id="nextPageBtn" class="btn-sm">Next <i class="fas fa-chevron-right"></i></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           MENU 5: GALERI GRAFIK LAPORAN (TEMA PUTIH BERSIH 300 DPI)
+           ================================================================= -->
+      <section class="tab-section" id="tab-charts">
+        <div class="cyber-card" style="margin-bottom:1.25rem">
+          <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-chart-area"></i> Galeri Grafik Artikel Ilmiah (Tema Putih Standar Jurnal - 300 DPI)</h2>
+          </div>
+          <p style="font-size:0.83rem;color:var(--text-secondary);margin-bottom:0.9rem">
+            Seluruh grafik di bawah ini telah dirender dalam resolusi tinggi <strong>300 DPI</strong> dengan latar belakang putih bersih agar siap langsung disisipkan ke dalam laporan artikel ilmiah 2 kolom (Word/PDF). Klik gambar untuk memperbesar atau klik <strong>Download PNG</strong>.
+          </p>
+          <div class="filter-pills">
+            <button type="button" class="preset-btn chart-cat-btn active" data-cat="all">Semua Grafik (10)</button>
+            <button type="button" class="preset-btn chart-cat-btn" data-cat="eda">EDA &amp; Distribusi (4)</button>
+            <button type="button" class="preset-btn chart-cat-btn" data-cat="corr">Korelasi &amp; Stoikiometri (2)</button>
+            <button type="button" class="preset-btn chart-cat-btn" data-cat="eval">Evaluasi Model ML (4)</button>
+          </div>
+        </div>
+
+        {% set report_charts = [
+          {"file": "01_distribusi_target_co2.png", "cat": "eda", "title": "Gambar 1. Distribusi Target Emisi CO2", "desc": "Histogram, kurva KDE, dan boxplot target CO2 Emissions (Mean = 251,16 g/km, Median = 246,00 g/km)."},
+          {"file": "02_korelasi_heatmap_fitur.png", "cat": "corr", "title": "Gambar 2. Matriks Korelasi Pearson", "desc": "Heatmap korelasi antar fitur numerik yang membuktikan korelasi sangat kuat pada konsumsi BBM (r = 0,919)."},
+          {"file": "03_emisi_per_jenis_bahan_bakar.png", "cat": "eda", "title": "Gambar 3. Distribusi Emisi per Bahan Bakar", "desc": "Perbandingan sebaran emisi CO2 pada bahan bakar Regular (X), Premium (Z), Diesel (D), dan Ethanol E85 (E)."},
+          {"file": "04_emisi_per_kelas_kendaraan.png", "cat": "eda", "title": "Gambar 4. Rata-Rata Emisi per Kelas Kendaraan", "desc": "Peringkat rata-rata emisi CO2 pada 16 kategori Vehicle Class dari Station Wagon Small hingga Van Passenger."},
+          {"file": "05_hubungan_konsumsi_bbm_vs_co2.png", "cat": "corr", "title": "Gambar 5. Efek Stoikiometri Bahan Bakar", "desc": "Scatter plot konsumsi BBM vs emisi CO2 yang menunjukkan perbedaan gradien kemiringan antar jenis bahan bakar."},
+          {"file": "06_hubungan_kapasitas_mesin_silinder_co2.png", "cat": "eda", "title": "Gambar 6. Kapasitas Mesin & Silinder vs CO2", "desc": "Analisis pengaruh Engine Size (r = 0,855) dan jumlah silinder (3 hingga 16 silinder) terhadap emisi."},
+          {"file": "07_perbandingan_metrik_model.png", "cat": "eval", "title": "Gambar 7. Perbandingan R², MAE, dan RMSE", "desc": "Komparasi performa kuantitatif Multiple Linear Regression vs Random Forest Regressor pada data uji."},
+          {"file": "08_actual_vs_predicted_comparison.png", "cat": "eval", "title": "Gambar 8. Plot Actual vs Predicted CO2", "desc": "Kesesuaian nilai prediksi terhadap nilai aktual di sepanjang garis identitas y = x untuk kedua algoritma."},
+          {"file": "09_analisis_residual_error.png", "cat": "eval", "title": "Gambar 9. Analisis Residual & Distribusi Galat", "desc": "Sebaran residual prediksi yang menunjukkan penyempitan standar deviasi galat pada Random Forest (Std = 3,60)."},
+          {"file": "10_feature_importance_rf.png", "cat": "eval", "title": "Gambar 10. Top 10 Feature Importance (RF)", "desc": "Kontribusi relatif tiap atribut pada Random Forest Regressor dengan Fuel Consumption Comb mendominasi (92,20%)."}
+        ] %}
+
+        <div class="charts-grid">
+          {% for ch in report_charts %}
+          <article class="chart-item" data-category="{{ ch.cat }}">
+            <div class="chart-img-wrap"
+                 data-src="{{ url_for('static', filename='charts/' + ch.file) }}"
+                 data-title="{{ ch.title }}"
+                 data-caption="{{ ch.desc }}">
+              <img src="{{ url_for('static', filename='charts/' + ch.file) }}" alt="{{ ch.title }}" loading="lazy" />
+            </div>
+            <div class="chart-meta">
+              <div>
+                <h4>{{ ch.title }}</h4>
+                <p>{{ ch.desc }}</p>
+              </div>
+              <div class="chart-actions">
+                <a class="btn-sm" href="{{ url_for('static', filename='charts/' + ch.file) }}" download="{{ ch.file }}">
+                  <i class="fas fa-download"></i> Download PNG
+                </a>
+              </div>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+
+      <!-- =================================================================
+           MENU 6: METODOLOGI & FORMULASI MATEMATIS
+           ================================================================= -->
+      <section class="tab-section" id="tab-methodology">
+        <div class="grid-2">
+          <div class="cyber-card">
+            <div class="section-header">
+              <h2 class="section-title"><i class="fas fa-square-root-alt"></i> Formulasi Matematis Algoritma</h2>
+            </div>
+            <p style="font-size:0.84rem;color:var(--text-secondary)">
+              <strong>1. Multiple Linear Regression (MLR):</strong> Memodelkan emisi CO<sub>2</sub> sebagai kombinasi linier dari vektor fitur hasil <em>One-Hot Encoding</em> dan atribut numerik mesin:
+            </p>
+            <div class="formula-box">ŷ = β₀ + β₁x₁ + β₂x₂ + ... + βₚxₚ + ε</div>
+
+            <p style="font-size:0.84rem;color:var(--text-secondary);margin-top:0.85rem">
+              <strong>2. Random Forest Regressor (Ensemble Bagging):</strong> Mengagregasi rata-rata prediksi dari <em>B = 60</em> pohon keputusan regresi (CART) yang dilatih pada sampel <em>bootstrap</em> untuk menangkap interaksi non-linier antar jenis bahan bakar:
+            </p>
+            <div class="formula-box">ŷ_RF(x) = (1 / B) · Σ_{b=1}^{B} T_b(x)</div>
+
+            <p style="font-size:0.84rem;color:var(--text-secondary);margin-top:0.85rem">
+              <strong>3. Metrik Evaluasi Regresi:</strong>
+            </p>
+            <div class="formula-box">
+              R² = 1 - [ Σ(yᵢ - ŷᵢ)² / Σ(yᵢ - ȳ)² ]<br>
+              RMSE = √[ (1/n) · Σ(yᵢ - ŷᵢ)² ]
+            </div>
+          </div>
+
+          <div class="cyber-card emerald">
+            <div class="section-header">
+              <h2 class="section-title" style="color:var(--neon-emerald)"><i class="fas fa-microscope"></i> Temuan Kritis Pra-Pemrosesan Data</h2>
+            </div>
+            <ul style="list-style:none;display:flex;flex-direction:column;gap:0.8rem;font-size:0.84rem;color:var(--text-secondary)">
+              <li style="background:var(--bg-input);padding:0.75rem;border-left:3px solid var(--neon-cyan)">
+                <strong style="color:#fff">1. Eliminasi 1.103 Baris Duplikat (14,94%):</strong> Dataset mentah berisi 7.385 baris survei multi-tahun. Penghapusan duplikat mencegah kebocoran evaluasi (<em>data leakage</em>) antara data latih dan data uji.
+              </li>
+              <li style="background:var(--bg-input);padding:0.75rem;border-left:3px solid var(--neon-amber)">
+                <strong style="color:#fff">2. Penanganan Anomali Fuel Type 'N' (Natural Gas):</strong> Hanya ditemukan 1 observasi (Chevrolet Impala Dual Fuel) pada seluruh dataset sehingga dieliminasi demi stabilitas stratifikasi.
+              </li>
+              <li style="background:var(--bg-input);padding:0.75rem;border-left:3px solid var(--neon-emerald)">
+                <strong style="color:#fff">3. Efek Stoikiometri Pembakaran:</strong> Bahan bakar Diesel memiliki rasio emisi 26,89 g CO<sub>2</sub> per L/100km, lebih curam dibanding Bensin (23,31) dan Ethanol E85 (16,32). Interaksi kemiringan berbeda inilah yang membuat Random Forest unggul 32,6% lebih rendah galat RMSE-nya dibanding MLR.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ===================================================================
+         RIGHT-ALIGNED CYBERPUNK SIDEBAR (6 INTERACTIVE MENUS)
+         =================================================================== -->
+    <aside class="right-sidebar" id="rightSidebar">
+      <div>
+        <div class="brand-box">
+          <div class="brand-tag"><span class="pulse-dot"></span> SYSTEM ONLINE // V2.6</div>
+          <div class="brand-title">CARBON<span>TEL</span> AI</div>
+          <div class="brand-sub">Vehicular CO<sub>2</sub> Emission Predictor</div>
+        </div>
+
+        <div class="nav-label">Navigasi Modul Utama</div>
+        <ul class="nav-menu">
+          <li>
+            <button type="button" class="nav-btn active" data-tab="dashboard">
+              <span class="nav-idx">01</span>
+              <i class="fas fa-tachometer-alt"></i>
+              <span>Telemetry Overview</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-btn" data-tab="simulator">
+              <span class="nav-idx">02</span>
+              <i class="fas fa-sliders-h"></i>
+              <span>Simulator Emisi CO<sub>2</sub></span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-btn" data-tab="comparator">
+              <span class="nav-idx">03</span>
+              <i class="fas fa-balance-scale"></i>
+              <span>Arena Komparasi</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-btn" data-tab="dataset">
+              <span class="nav-idx">04</span>
+              <i class="fas fa-database"></i>
+              <span>Eksplorasi Dataset</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-btn" data-tab="charts">
+              <span class="nav-idx">05</span>
+              <i class="fas fa-chart-bar"></i>
+              <span>Galeri Grafik Laporan</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-btn" data-tab="methodology">
+              <span class="nav-idx">06</span>
+              <i class="fas fa-code-branch"></i>
+              <span>Metodologi &amp; Rumus</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="student-badge">
+          <strong>Sigit Miraj Permana</strong>
+          <span>NIM: 301240037 // Kelas 5B</span><br>
+          <span>Teknik Informatika — FTI UNIBBA</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Lightbox Modal for High-Res White Academic Charts -->
+  <div class="lightbox" id="chartLightbox">
+    <div class="lightbox-content">
+      <img id="lightboxImg" src="" alt="Preview Grafik Laporan" />
+      <div class="lightbox-bar">
+        <div>
+          <strong id="lightboxTitle" style="color:var(--neon-cyan);display:block"></strong>
+          <small id="lightboxCaption" style="color:var(--text-secondary)"></small>
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <a id="lightboxDownload" class="btn-sm" href="#" download><i class="fas fa-download"></i> Unduh PNG</a>
+          <button type="button" class="btn-sm" id="closeLightbox"><i class="fas fa-times"></i> Tutup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Embedded Metadata Payload -->
+  <script id="app-metadata" type="application/json">{{ metadata | tojson }}</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
